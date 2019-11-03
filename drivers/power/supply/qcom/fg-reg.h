@@ -16,6 +16,10 @@
 /* FG_ADC_RR register definitions used only for READ */
 #define ADC_RR_FAKE_BATT_LOW_LSB(chip)		(chip->rradc_base + 0x58)
 #define ADC_RR_FAKE_BATT_HIGH_LSB(chip)		(chip->rradc_base + 0x5A)
+#ifdef CONFIG_HTC_BATT
+#define ADC_RR_BATT_THERM_LSB(chip)		(chip->rradc_base + 0x74)
+#define ADC_RR_BATT_THERM_MSB(chip)		(chip->rradc_base + 0x75)
+#endif // CONFIG_HTC_BATT
 
 /* FG_BATT_SOC register definitions */
 #define BATT_SOC_FG_ALG_STS(chip)		(chip->batt_soc_base + 0x06)
@@ -212,6 +216,7 @@
 #define ADC_BITSTREAM_INV_BIT			BIT(4)
 #define SOURCE_SELECT_MASK			GENMASK(1, 0)
 #define SRC_SEL_BATFET				0x0
+#define SRC_SEL_SENSERESISTOR			0x1
 #define SRC_SEL_BATFET_SMB			0x2
 #define SRC_SEL_RESERVED			0x3
 

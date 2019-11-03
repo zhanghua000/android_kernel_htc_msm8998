@@ -230,7 +230,8 @@ static int mmc_decode_scr(struct mmc_card *card)
  */
 static int mmc_read_ssr(struct mmc_card *card)
 {
-	unsigned int au, es, et, eo;
+	unsigned int au, es, et, eo, spd_cls;
+	unsigned char card_spd_val[5] = {0, 2, 4, 6, 10};
 	int err, i;
 	u32 *ssr;
 
@@ -270,10 +271,23 @@ static int mmc_read_ssr(struct mmc_card *card)
 				card->ssr.erase_timeout = (et * 1000) / es;
 				card->ssr.erase_offset = eo * 1000;
 			}
+			printk(KERN_INFO "%s: au : %d KB\n",
+				mmc_hostname(card->host), card->ssr.au);
 		} else {
 			pr_warn("%s: SD Status: Invalid Allocation Unit size\n",
 				mmc_hostname(card->host));
 		}
+	}
+	spd_cls = UNSTUFF_BITS(ssr, 440 - 384, 8);
+	if (spd_cls < 5 && spd_cls > 0) {
+		printk(KERN_INFO "%s: speed class type is CLASS %d\n",
+			mmc_hostname(card->host), card_spd_val[spd_cls]);
+		card->speed_class = card_spd_val[spd_cls];
+	}
+	else {
+		printk(KERN_INFO "%s: Unknown speed class type\n",
+			mmc_hostname(card->host));
+		card->speed_class = -1;
 	}
 out:
 	kfree(ssr);
@@ -583,11 +597,11 @@ static int sd_set_current_limit(struct mmc_card *card, u8 *status)
 		err = mmc_sd_switch(card, 1, 3, current_limit, status);
 		if (err)
 			return err;
-
+#if 0
 		if (((status[15] >> 4) & 0x0F) != current_limit)
 			pr_warn("%s: Problem setting current limit!\n",
 				mmc_hostname(card->host));
-
+#endif
 	}
 
 	return 0;
@@ -1134,12 +1148,17 @@ static void mmc_sd_remove(struct mmc_host *host)
 	mmc_remove_card(host->card);
 
 	mmc_claim_host(host);
+	host->removed_cnt++;
 	host->card = NULL;
 	mmc_release_host(host);
 }
 
 /*
  * Card detection - card is alive.
+ * We don`t card card is alive or not
+ * If SD can be detect, we`ll reinit it anyway.
+ * return 0 : SD alive, inserted
+ * return 1 : SD dead, ejected
  */
 static int mmc_sd_alive(struct mmc_host *host)
 {
@@ -1216,6 +1235,8 @@ out:
 		mmc_detach_bus(host);
 		mmc_power_off(host);
 		mmc_release_host(host);
+		printk(KERN_ERR "%s %s removed %d times\n",
+			__func__, mmc_hostname(host), host->removed_cnt);
 	}
 }
 
@@ -1479,7 +1500,11 @@ int mmc_attach_sd(struct mmc_host *host)
 	if (!retries) {
 		printk(KERN_ERR "%s: mmc_sd_init_card() failure (err = %d)\n",
 		       mmc_hostname(host), err);
-		goto err;
+		host->removed_cnt++;
+		if (host->card)
+			goto remove_card;
+		else
+			goto err;
 	}
 #else
 	err = mmc_sd_init_card(host, rocr, NULL);

@@ -36,6 +36,9 @@
 #include <sound/audio_cal_utils.h>
 #include <sound/audio_effects.h>
 #include <sound/hwdep.h>
+/* HTC_AUD_START */
+#include <sound/htc_acoustic_alsa.h>
+/* HTC_AUD_END */
 #include <sound/q6adm-v2.h>
 #include <sound/apr_audio-v2.h>
 
@@ -942,6 +945,9 @@ static struct cal_block_data *msm_routing_find_topology_by_path(int path)
 		cal_block = list_entry(ptr,
 			struct cal_block_data, list);
 
+		if (cal_utils_is_cal_stale(cal_block))
+			continue;
+
 		if (((struct audio_cal_info_adm_top *)cal_block->cal_info)
 			->path == path) {
 			return cal_block;
@@ -966,6 +972,9 @@ static struct cal_block_data *msm_routing_find_topology(int path,
 		cal_block = list_entry(ptr,
 			struct cal_block_data, list);
 
+		if (cal_utils_is_cal_stale(cal_block))
+			continue;
+
 		cal_info = (struct audio_cal_info_adm_top *)
 			cal_block->cal_info;
 		if ((cal_info->path == path)  &&
@@ -979,6 +988,11 @@ static struct cal_block_data *msm_routing_find_topology(int path,
 	return msm_routing_find_topology_by_path(path);
 }
 
+/*
+ * Retrieving cal_block will mark cal_block as stale.
+ * Hence it cannot be reused or resent unless the flag
+ * is reset.
+ */
 static int msm_routing_get_adm_topology(int fedai_id, int session_type,
 					int be_id)
 {
@@ -1005,6 +1019,7 @@ static int msm_routing_get_adm_topology(int fedai_id, int session_type,
 
 	topology = ((struct audio_cal_info_adm_top *)
 		cal_block->cal_info)->topology;
+	cal_utils_mark_cal_used(cal_block);
 unlock:
 	mutex_unlock(&cal_data->lock);
 done:
@@ -2586,7 +2601,8 @@ static int msm_routing_lsm_func_get(struct snd_kcontrol *kcontrol,
 			break;
 
 	if (i-- == ARRAY_SIZE(lsm_port_text)) {
-		WARN(1, "Invalid id name %s\n", kcontrol->id.name);
+		pr_warn("%s: Invalid id name %s\n", __func__,
+            kcontrol->id.name);
 		return -EINVAL;
 	}
 
@@ -2629,7 +2645,7 @@ static int msm_routing_lsm_func_get(struct snd_kcontrol *kcontrol,
 		ucontrol->value.integer.value[0] = MADSWAUDIO;
 	break;
 	default:
-		WARN(1, "Unknown\n");
+		pr_warn("%s: Unknown\n", __func__);
 		return -EINVAL;
 	}
 	return 0;
@@ -2649,7 +2665,8 @@ static int msm_routing_lsm_func_put(struct snd_kcontrol *kcontrol,
 			break;
 
 	if (i-- == ARRAY_SIZE(lsm_port_text)) {
-		WARN(1, "Invalid id name %s\n", kcontrol->id.name);
+		pr_warn("%s: Invalid id name %s\n", __func__,
+            kcontrol->id.name);
 		return -EINVAL;
 	}
 
@@ -2671,7 +2688,7 @@ static int msm_routing_lsm_func_put(struct snd_kcontrol *kcontrol,
 		mad_type = MAD_SW_AUDIO;
 		break;
 	default:
-		WARN(1, "Unknown\n");
+		pr_warn("%s: Unknown\n", __func__);
 		return -EINVAL;
 	}
 
@@ -3807,6 +3824,12 @@ static int msm_routing_ec_ref_rx_put(struct snd_kcontrol *kcontrol,
 		msm_route_ec_ref_rx = 22;
 		ec_ref_port_id = AFE_PORT_ID_INT3_MI2S_TX;
 		break;
+/* HTC_AUD_START */
+	case 23:
+		msm_route_ec_ref_rx = 23;
+		ec_ref_port_id = SLIMBUS_7_RX;
+		break;
+/* HTC_AUD_END */
 	default:
 		msm_route_ec_ref_rx = 0; /* NONE */
 		pr_err("%s EC ref rx %ld not valid\n",
@@ -3829,7 +3852,10 @@ static const char *const ec_ref_rx[] = { "None", "SLIM_RX", "I2S_RX",
 	"SLIM_5_RX", "SLIM_1_TX", "QUAT_TDM_TX_1",
 	"QUAT_TDM_RX_0", "QUAT_TDM_RX_1", "QUAT_TDM_RX_2", "SLIM_6_RX",
 	"TERT_MI2S_RX", "QUAT_MI2S_RX", "TERT_TDM_TX_0", "USB_AUDIO_RX",
-	"INT0_MI2S_RX", "INT4_MI2S_RX", "INT3_MI2S_TX"};
+	"INT0_MI2S_RX", "INT4_MI2S_RX", "INT3_MI2S_TX",
+/* HTC_AUD_START */
+	"SLIM_7_RX"};
+/* HTC_AUD_END */
 
 static const struct soc_enum msm_route_ec_ref_rx_enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(ec_ref_rx), ec_ref_rx),
@@ -15378,6 +15404,7 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"TERT_MI2S_RX_DL_HL", "Switch", "TERT_MI2S_DL_HL"},
 	{"TERT_MI2S_RX", NULL, "TERT_MI2S_RX_DL_HL"},
 
+	{"QUAT_MI2S_RX_DL_HL", "Switch", "SLIM0_DL_HL"}, //HTC_AUD
 	{"QUAT_MI2S_RX_DL_HL", "Switch", "QUAT_MI2S_DL_HL"},
 	{"QUAT_MI2S_RX", NULL, "QUAT_MI2S_RX_DL_HL"},
 	{"MI2S_UL_HL", NULL, "TERT_MI2S_TX"},

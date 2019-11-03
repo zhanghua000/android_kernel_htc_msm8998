@@ -2237,6 +2237,8 @@ reinit:
 		}
 	}
 
+	pr_info("%s: %s success\n", mmc_hostname(card->host), __func__);
+
 	return 0;
 
 free_card:

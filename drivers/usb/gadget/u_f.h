@@ -47,6 +47,7 @@
 struct usb_ep;
 struct usb_request;
 
+
 /**
  * alloc_ep_req - returns a usb_request allocated by the gadget driver and
  * allocates the request's buffer.

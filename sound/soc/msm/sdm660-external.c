@@ -26,6 +26,9 @@
 #include "../codecs/wcd9335.h"
 #include "../codecs/wcd934x/wcd934x.h"
 #include "../codecs/wcd934x/wcd934x-mbhc.h"
+/* HTC_AUD_START - AS HS 2.0 */
+#include "../codecs/htc-mbhc-headset.h"
+/* HTC_AUD_END */
 
 #define SDM660_SPK_ON     1
 #define SDM660_SPK_OFF    0
@@ -68,6 +71,65 @@ static struct msm_asoc_wcd93xx_codec msm_codec_fn;
 static struct platform_device *spdev;
 
 static bool is_initial_boot;
+
+//HTC_AUD_START
+struct htc_request_gpio {
+	unsigned gpio_no;
+	const char* gpio_name;
+};
+
+static struct tcoil_config {
+	int init;
+	struct htc_request_gpio gpio[1];
+} htc_tcoil_config = {
+	.init = 0,
+	.gpio = {
+		{ .gpio_name = "htc,aud_tcoil_amp_gpio",},
+	},
+};
+//HTC_AUD_END
+
+/* HTC_AUD_START - AS HS 2.0 */
+static struct mutex htc_adaptivesound_enable_mutex;
+static struct snd_soc_codec* tasha_codec = NULL;
+int htc_adaptivesound_enable = 0;
+int htc_as20_volume_index = 0;
+/* HTC_AUD_END - AS HS 2.0 */
+
+//HTC_AUD_START
+
+static void htc_rcv_amp_ctl(int enable)
+{
+	int i;
+
+	if (!htc_tcoil_config.init)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(htc_tcoil_config.gpio); i++) {
+		gpio_set_value(htc_tcoil_config.gpio[i].gpio_no, enable);
+		pr_info("%s: gpio no. %d name \"%s\" value %d\n", __func__,
+				htc_tcoil_config.gpio[i].gpio_no,
+				htc_tcoil_config.gpio[i].gpio_name,
+				gpio_get_value(htc_tcoil_config.gpio[i].gpio_no));
+	}
+}
+
+static int msm_ext_tcoil_event(struct snd_soc_dapm_widget *w,
+				 struct snd_kcontrol *k, int event)
+{
+	int ret = 0;
+
+	pr_debug("%s()\n", __func__);
+	if (SND_SOC_DAPM_EVENT_ON(event)) {
+		pr_info("%s tcoil amp on\n",__func__);
+		htc_rcv_amp_ctl(1);
+	} else {
+		pr_info("%s tcoil amp off\n",__func__);
+		htc_rcv_amp_ctl(0);
+	}
+	return ret;
+}
+//HTC_AUD_END
 
 static void *def_ext_mbhc_cal(void);
 
@@ -144,6 +206,12 @@ static char const *bt_sample_rate_rx_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
 static char const *bt_sample_rate_tx_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
 
 
+/* HTC_AUD_START - AS HS 2.0 */
+static const char *const htc_as20_vol_index_text[] = {"None", "Zero", "One", "Two", "Three", "Four",
+						"Five", "Six", "Seven", "Eight", "Nine",
+						"Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen"};
+static int htc_as_offset = 0;
+/* HTC_AUD_END - AS HS 2.0 */
 
 static SOC_ENUM_SINGLE_EXT_DECL(spk_func_en, spk_function_text);
 static SOC_ENUM_SINGLE_EXT_DECL(slim_0_rx_chs, slim_rx_ch_text);
@@ -166,6 +234,219 @@ static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate, bt_sample_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate_rx, bt_sample_rate_rx_text);
 static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate_tx, bt_sample_rate_tx_text);
 
+=======
+static SOC_ENUM_SINGLE_EXT_DECL(htc_as20_vol_index, htc_as20_vol_index_text); /* HTC_AUD - AS HS 2.0 */
+
+/* HTC_AUD_START - HTC Effect {HPKB:2082}*/
+struct htc_effect_payload {
+	uint32_t payload_size;
+	void *payload;
+};
+
+static struct htc_effect_payload * htc_payload = NULL;
+
+static struct snd_kcontrol_new *htc_audio_controls;
+
+static int htc_switch_get(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	int index = kcontrol->private_value;
+	unsigned int value = 0;
+	int *payload = NULL;
+
+	payload = (int *)htc_payload[index].payload;
+	if (payload)
+		value = *(payload+3);
+
+	ucontrol->value.integer.value[0] = value;
+	return 0;
+}
+
+static int htc_switch_put(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	int index = kcontrol->private_value;
+	unsigned int enable_flag = 0;
+	int *payload = NULL;
+	bool hd_support = false;
+	int port_id = 0;
+	int ret = 0;
+
+	if ((ucontrol->value.integer.value[0] == 0) || (ucontrol->value.integer.value[0] == 1))
+		enable_flag = ucontrol->value.integer.value[0];
+	else
+		return -EINVAL;
+
+	payload = (int *)htc_payload[index].payload;
+	if (payload)
+		*(payload+3) = enable_flag;
+
+	if (htc_effects_array[index].flag_mask & HD_SUPPORT)
+		hd_support = true;
+
+	if (htc_effects_array[index].flag_mask & POPP_EFFECT) {
+	/* POPP effect */
+		ret = htc_set_asm_effect(payload,
+			htc_payload[index].payload_size,
+			htc_effects_array[index].topology_id,
+			hd_support);
+	} else if (htc_effects_array[index].flag_mask & COPP_EFFECT) {
+	/* COPP effect */
+		if ((htc_effects_array[index].port_mask & SPK_MASK)) {
+			port_id = AFE_PORT_ID_QUATERNARY_MI2S_RX;
+
+			ret = htc_set_adm_effect(payload,
+				htc_payload[index].payload_size,
+				htc_effects_array[index].topology_id,
+				hd_support,
+				port_id);
+		}
+	}
+
+	pr_info("%s: htc_effect: index %d enable %d ret %d\n", __func__, index, enable_flag, ret);
+
+	return 0;
+}
+
+static int htc_switch_info(struct snd_kcontrol *kcontrol,
+		       struct snd_ctl_elem_info *uinfo)
+{
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = 1;
+	return 0;
+}
+
+static int htc_create_controls(struct snd_soc_codec *codec)
+{
+	int total = ARRAY_SIZE(htc_effects_array);
+	int index = 0;
+	int as30_idx = 0;
+	int *payload_value = NULL;
+
+	htc_audio_controls = kzalloc(sizeof(*htc_audio_controls)*total, GFP_KERNEL);
+	if (!htc_audio_controls) {
+		pr_err("%s, alloc htc control failed", __func__);
+		return -ENOMEM;
+	}
+
+	htc_payload  = kzalloc(sizeof(*htc_payload)*total, GFP_KERNEL);
+	if (!htc_payload) {
+		pr_err("%s, alloc payload array failed", __func__);
+		return -ENOMEM;
+	}
+
+	for (index = 0 ; index < total; index++) {
+		htc_audio_controls[index].name = htc_effects_array[index].effect_name;
+		htc_audio_controls[index].iface = SNDRV_CTL_ELEM_IFACE_MIXER;
+		htc_audio_controls[index].private_value = index;
+
+		if ((htc_effects_array[index].flag_mask & SWITCH_CTL)
+			|| (htc_effects_array[index].flag_mask & PARAM_CTL)) {
+			/* initial related effect paylod */
+			htc_payload[index].payload_size = 4*sizeof(uint32_t);
+			htc_payload[index].payload = kzalloc(htc_payload[index].payload_size, GFP_KERNEL);
+			if (!htc_payload[index].payload) {
+				pr_err("%s, alloc payload %d failed", __func__, index);
+				return -ENOMEM;
+			}
+
+			payload_value = (int *)htc_payload[index].payload;
+			*payload_value++ = htc_effects_array[index].module_id;
+			*payload_value++ = htc_effects_array[index].param_id;
+			*payload_value++ = sizeof(uint32_t);
+			*payload_value = 0;
+
+			/* initial related effect control */
+			htc_audio_controls[index].info = htc_switch_info;
+			htc_audio_controls[index].get = htc_switch_get;
+			htc_audio_controls[index].put = htc_switch_put;
+
+		} else if (htc_effects_array[index].flag_mask & AaptiveSound) {
+			/* initial related AS3.0 effect payload */
+			htc_payload[index].payload_size = (3+256)*sizeof(uint32_t);
+			htc_payload[index].payload = kzalloc(htc_payload[index].payload_size, GFP_KERNEL);
+			if (!htc_payload[index].payload) {
+				pr_err("%s, alloc payload %d failed", __func__, index);
+				return -ENOMEM;
+			}
+
+			/* restore for AS3.0 payload index */
+			if (as30_idx == 0) {
+				htc_as_offset = index;
+				as30_idx = 1;
+			}
+
+			htc_audio_controls[index].info = htc_switch_info;
+		}
+	}
+
+	return snd_soc_add_codec_controls(codec, htc_audio_controls,
+					 total);
+}
+
+int htc_get_port_by_mask(int* port_mask) {
+
+	int port_id = 0;
+
+	if ((*port_mask) & SPK_MASK) {
+		port_id = AFE_PORT_ID_QUATERNARY_MI2S_RX;
+		(*port_mask) &= (~SPK_MASK);
+
+	} else if ((*port_mask) & HEADSET_MASK) {
+		port_id = AFE_PORT_ID_SLIMBUS_MULTI_CHAN_6_RX;
+		(*port_mask) &= (~HEADSET_MASK);
+
+	} else if ((*port_mask) & HEADSET441MASK) {
+		port_id = AFE_PORT_ID_SLIMBUS_MULTI_CHAN_5_RX;
+		(*port_mask) &= (~HEADSET441MASK);
+	}
+
+	return port_id;
+}
+
+void htc_effect_by_adm_open(int port_id, int topology) {
+	int mask_flag = 0;
+	bool hd_flag = false;
+	int index = 0;
+
+	switch (port_id) {
+	case AFE_PORT_ID_QUATERNARY_MI2S_RX:
+		mask_flag = SPK_MASK;
+		break;
+	case AFE_PORT_ID_SLIMBUS_MULTI_CHAN_6_RX:
+		mask_flag |= HEADSET_MASK;
+		break;
+	case AFE_PORT_ID_SLIMBUS_MULTI_CHAN_5_RX:
+		mask_flag |= HEADSET441MASK;
+		break;
+	default:
+		mask_flag = 0;
+		break;
+	}
+
+	for (index = 0; index < ARRAY_SIZE(htc_effects_array); index++) {
+		if (htc_effects_array[index].flag_mask & HD_SUPPORT)
+			hd_flag = true;
+
+		if (htc_effects_array[index].flag_mask & POPP_EFFECT) {
+			htc_set_asm_effect(htc_payload[index].payload,
+				htc_payload[index].payload_size,
+				htc_effects_array[index].topology_id,
+				hd_flag);
+		} else if (htc_effects_array[index].flag_mask & COPP_EFFECT) {
+				if ((htc_effects_array[index].port_mask & mask_flag)
+					&& ((htc_effects_array[index].topology_id == topology) || hd_flag))
+					htc_set_adm_effect(htc_payload[index].payload,
+						htc_payload[index].payload_size,
+						htc_effects_array[index].topology_id,
+						hd_flag,
+						port_id);
+		}
+	}
+}
+/* HTC_AUD_END - HTC Effect */
 
 static int slim_get_sample_rate_val(int sample_rate)
 {
@@ -803,6 +1084,33 @@ int msm_ext_enable_codec_mclk(struct snd_soc_codec *codec, int enable,
 	return ret;
 }
 
+/* HTC_AUD_START - AS HS 2.0 */
+/* Volume index setting during playing white noise on calibration step*/
+static int msm_htc_as20_vol_index_put(struct snd_kcontrol *kcontrol,
+				    struct snd_ctl_elem_value *ucontrol)
+{
+	int value = ucontrol->value.integer.value[0];
+
+	if (value < 0 || value > sizeof(htc_as20_vol_index_text)/sizeof(htc_as20_vol_index_text[0]) -1)
+		htc_as20_volume_index = 0;
+	else
+		htc_as20_volume_index = value;
+
+	pr_info("%s, value %d, htc_as20_volume_index %d\n", __func__ , value, htc_as20_volume_index);
+
+	return 0;
+}
+
+static int msm_htc_as20_vol_index_get(struct snd_kcontrol *kcontrol,
+				    struct snd_ctl_elem_value *ucontrol)
+{
+	pr_info("%s, htc_as20_volume_index %d\n", __func__ , htc_as20_volume_index);
+	ucontrol->value.integer.value[0] = htc_as20_volume_index;
+
+	return 0;
+}
+/* HTC_AUD_END - AS HS 2.0 */
+
 static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("Speaker Function", spk_func_en, msm_ext_get_spk,
 			msm_ext_set_spk),
@@ -847,6 +1155,10 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("BT SampleRate TX", bt_sample_rate_tx,
 			msm_bt_sample_rate_tx_get,
 			msm_bt_sample_rate_tx_put),
+/* HTC_AUD_START - AS HS 2.0 */
+	SOC_ENUM_EXT("HTC_AS20_VOL Index", htc_as20_vol_index,
+			msm_htc_as20_vol_index_get, msm_htc_as20_vol_index_put),
+/* HTC_AUD_END - AS HS 2.0 */
 };
 
 static int msm_slim_get_ch_from_beid(int32_t be_id)
@@ -1543,16 +1855,23 @@ static const struct snd_soc_dapm_widget msm_dapm_widgets[] = {
 
 	SND_SOC_DAPM_SUPPLY_S("MCLK TX", -1,  SND_SOC_NOPM, 0, 0,
 	msm_ext_mclk_tx_event, SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
-
-	SND_SOC_DAPM_SPK("Lineout_1 amp", NULL),
+//HTC_AUD_START
+	SND_SOC_DAPM_SPK("Lineout_1 amp", msm_ext_tcoil_event),
+//HTC_AUD_END
 	SND_SOC_DAPM_SPK("Lineout_3 amp", NULL),
 	SND_SOC_DAPM_SPK("Lineout_2 amp", NULL),
 	SND_SOC_DAPM_SPK("Lineout_4 amp", NULL),
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("Secondary Mic", NULL),
+/* HTC_AUD_START - AS HS 2.0 */
+#if 0
 	SND_SOC_DAPM_MIC("ANCRight Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("ANCLeft Headset Mic", NULL),
+#else
+/* htc-mbhc-headset.c */
+#endif
+/* HTC_AUD_END */
 	SND_SOC_DAPM_MIC("Analog Mic4", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic6", NULL),
 	SND_SOC_DAPM_MIC("Analog Mic7", NULL),
@@ -1645,8 +1964,21 @@ int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		return ret;
 	}
 
+/* HTC_AUD_START - HTC Effect {HPKB:2082}*/
+	ret = htc_create_controls(codec);
+	if (ret < 0) {
+		pr_err("%s: add htc effect controls failed, err %d\n",
+			__func__, ret);
+		return ret;
+	}
+/* HTC_AUD_END */
+
 	snd_soc_dapm_new_controls(dapm, msm_dapm_widgets,
 			ARRAY_SIZE(msm_dapm_widgets));
+
+/* HTC_AUD_START - AS HS 2.0 */
+	htc_typec_hs_dapm_new_controls(dapm);
+/* HTC_AUD_END */
 
 	if (!strcmp(dev_name(codec_dai->dev), "tasha_codec"))
 		snd_soc_dapm_add_routes(dapm, wcd_audio_paths_tasha,
@@ -1781,7 +2113,13 @@ int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	 * Defalut configuration is for WSA8815.
 	 */
 	if (!strcmp(dev_name(codec_dai->dev), "tavil_codec")) {
+/* HTC_AUDIO_START */
+#if 0
 		if (rtd_aux && rtd_aux->component)
+#else
+		if (rtd->card->num_aux_devs && rtd_aux && rtd_aux->component)
+#endif
+/* HTC_AUDIO_END */
 			if (!strcmp(rtd_aux->component->name, WSA8810_NAME_1) ||
 			    !strcmp(rtd_aux->component->name, WSA8810_NAME_2)) {
 				tavil_set_spkr_mode(rtd->codec, SPKR_MODE_1);
@@ -1800,7 +2138,13 @@ int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		pdata->codec_root = entry;
 		tavil_codec_info_create_codec_entry(pdata->codec_root, codec);
 	} else {
+/* HTC_AUDIO_START */
+#if 0
 		if (rtd_aux && rtd_aux->component)
+#else
+		if (rtd->card->num_aux_devs && rtd_aux && rtd_aux->component)
+#endif
+/* HTC_AUDIO_END */
 			if (!strcmp(rtd_aux->component->name, WSA8810_NAME_1) ||
 			    !strcmp(rtd_aux->component->name, WSA8810_NAME_2)) {
 				tasha_set_spkr_mode(rtd->codec, SPKR_MODE_1);
@@ -1838,6 +2182,7 @@ int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	} else {
 		if (wcd_mbhc_cfg_ptr->calibration) {
 			pdata->codec = codec;
+			tasha_codec = codec; /* HTC_AUD - AS HS 2.0 */
 			ret = tasha_mbhc_hs_detect(codec, wcd_mbhc_cfg_ptr);
 			if (ret < 0)
 				pr_err("%s: Failed to intialise mbhc %d\n",
@@ -1877,6 +2222,110 @@ void msm_ext_register_audio_notifier(struct platform_device *pdev)
 			__func__, ret);
 }
 EXPORT_SYMBOL(msm_ext_register_audio_notifier);
+
+/* HTC_AUD_START - AS HS 2.0 */
+static int sdm660_setparam(htc_adsp_params_ioctl_t *ctrl)
+{
+	int ret = 0;
+	int type = ctrl->type;
+	int total_size = ctrl->size;
+	int port_id = -1;
+	int index = 0;
+	int mask = 0;
+
+	if (type < eEF_as2_coef_left_im || type > eEF_as2_rtc) {
+		pr_err("%s error type %d", __func__, type);
+		return -EINVAL;
+	}
+
+	index = type + htc_as_offset;
+	mask = htc_effects_array[index].port_mask;
+
+	mutex_lock(&htc_adaptivesound_enable_mutex);
+	if (htc_payload[index].payload) {
+		memcpy(htc_payload[index].payload, (void *)ctrl->params, total_size);
+		while ((port_id = htc_get_port_by_mask(&mask))) {
+			ret &= htc_set_adm_effect(htc_payload[index].payload,
+					htc_payload[index].payload_size,
+					htc_effects_array[index].topology_id,
+					0,
+					port_id);
+		}
+		if (ret)
+			pr_info("%s: htc_effect set AS error on index:%d ret:%d\n", __func__, index, ret);
+	}
+	mutex_unlock(&htc_adaptivesound_enable_mutex);
+
+	return 0;
+}
+
+static struct acoustic_ops acoustic = {
+	.msm_setparam = sdm660_setparam,
+};
+
+int htc_set_pin(struct platform_device *pdev)
+{
+	const char* aud_rf_pa_on_string = "htc,aud_rf_pa_on";
+	int rf_pa_gpio = 0;
+	int ret = 0;
+	int i = 0;
+
+	rf_pa_gpio = of_get_named_gpio(pdev->dev.of_node,
+			aud_rf_pa_on_string, 0);
+	if (gpio_is_valid(rf_pa_gpio)) {
+		pr_info("%s: gpio %s parse success gpio no %d\n", __func__,
+				aud_rf_pa_on_string,
+				rf_pa_gpio);
+		ret = gpio_request_one(rf_pa_gpio,
+				GPIOF_OUT_INIT_LOW, aud_rf_pa_on_string);
+		if (ret) {
+			pr_err("%s: gpio %s request failed with err %d\n", __func__,
+					aud_rf_pa_on_string, ret);
+			//return ret;
+		} else {
+			gpio_set_value(rf_pa_gpio, 0);
+		}
+	} else {
+		pr_err("%s: gpio %s parse fail\n", __func__,
+				aud_rf_pa_on_string);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(htc_tcoil_config.gpio); i++) {
+		if (!htc_tcoil_config.gpio[i].gpio_name) {
+			pr_err("%s: index %d gpio name is null\n", __func__, i);
+			return -EINVAL;
+		}
+
+		htc_tcoil_config.gpio[i].gpio_no = of_get_named_gpio(pdev->dev.of_node,
+				htc_tcoil_config.gpio[i].gpio_name, 0);
+
+		if (gpio_is_valid(htc_tcoil_config.gpio[i].gpio_no)) {
+				pr_info("%s: gpio %s parse success gpio no %d\n", __func__,
+						htc_tcoil_config.gpio[i].gpio_name,
+						htc_tcoil_config.gpio[i].gpio_no);
+
+				ret = gpio_request_one(htc_tcoil_config.gpio[i].gpio_no,
+						GPIOF_OUT_INIT_LOW, htc_tcoil_config.gpio[i].gpio_name);
+				if (ret) {
+					pr_err("%s: gpio %s request failed with err %d\n", __func__,
+							htc_tcoil_config.gpio[i].gpio_name, ret);
+					//return ret;
+				} else {
+					gpio_set_value(htc_tcoil_config.gpio[i].gpio_no, 0);
+				}
+		} else {
+				pr_err("%s: gpio %s parse fail\n", __func__,
+						htc_tcoil_config.gpio[i].gpio_name);
+				return -EINVAL;
+		}
+
+	}
+	htc_tcoil_config.init = 1;
+
+	return 0;
+}
+/* HTC_AUD_END */
 
 /**
  * msm_ext_cdc_init - external codec machine specific init.
@@ -1946,6 +2395,15 @@ int msm_ext_cdc_init(struct platform_device *pdev,
 			ioremap(TLMM_LPI_GPIO22_CFG, 4);
 	pdata->msm_snd_intr_lpi.lpi_gpio_inout =
 			ioremap(TLMM_LPI_GPIO22_INOUT, 4);
+/* HTC_AUD_START - AS HS 2.0 */
+	mutex_init(&htc_adaptivesound_enable_mutex);
+	htc_acoustic_register_ops(&acoustic);
+	htc_typec_hs_init(pdev);
+/* HTC_AUD_END */
+/* HTC_AUD_START */
+	htc_set_pin(pdev);
+/* HTC_AUD_END */
+
 err:
 	return ret;
 }
@@ -1966,6 +2424,10 @@ void msm_ext_cdc_deinit(struct msm_asoc_mach_data *pdata)
 		iounmap(pdata->msm_snd_intr_lpi.lpi_gpio_cfg);
 	if (pdata->msm_snd_intr_lpi.lpi_gpio_inout)
 		iounmap(pdata->msm_snd_intr_lpi.lpi_gpio_inout);
+/* HTC_AUD_START - AS HS 2.0 */
+	htc_typec_hs_deinit();
+	mutex_destroy(&htc_adaptivesound_enable_mutex);
+/* HTC_AUD_END */
 
 }
 EXPORT_SYMBOL(msm_ext_cdc_deinit);

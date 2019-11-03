@@ -2542,6 +2542,7 @@ static int gsi_bind(struct usb_configuration *c, struct usb_function *f)
 	struct rndis_params *params;
 	int status;
 
+
 	if (gsi->prot_id == IPA_USB_RMNET ||
 		gsi->prot_id == IPA_USB_DIAG)
 		gsi->ctrl_id = -ENODEV;
@@ -2632,6 +2633,7 @@ static int gsi_bind(struct usb_configuration *c, struct usb_function *f)
 			info.ctrl_desc->bInterfaceSubClass = 0x1;
 			info.ctrl_desc->bInterfaceProtocol = 0x03;
 		}
+
 		break;
 	case IPA_USB_MBIM:
 		info.string_defs = mbim_gsi_string_defs;
@@ -2834,6 +2836,9 @@ static void gsi_unbind(struct usb_configuration *c, struct usb_function *f)
 	 */
 	drain_workqueue(gsi->d_port.ipa_usb_wq);
 	ipa_usb_deinit_teth_prot(gsi->prot_id);
+
+	/* restore rndis_id to unknown */
+	gsi->rndis_id = RNDIS_ID_UNKNOWN;
 
 	if (gsi->prot_id == IPA_USB_RNDIS) {
 		gsi->d_port.sm_state = STATE_UNINITIALIZED;
@@ -3202,6 +3207,7 @@ static int gsi_set_inst_name(struct usb_function_instance *fi,
 		config_group_init_type_name(&opts->func_inst.group, "",
 					    &gsi_func_rndis_type);
 	gsi = gsi_function_init(prot_id);
+
 	if (IS_ERR(gsi))
 		return PTR_ERR(gsi);
 

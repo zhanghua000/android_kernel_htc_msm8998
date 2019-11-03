@@ -1091,6 +1091,8 @@ int gsi_alloc_evt_ring(struct gsi_evt_ring_props *props, unsigned long dev_hdl,
 	}
 	ee = gsi_ctx->per.ee;
 
+	ee = gsi_ctx->per.ee;
+
 	if (!props || !evt_ring_hdl || dev_hdl != (uintptr_t)gsi_ctx) {
 		GSIERR("bad params props=%p dev_hdl=0x%lx evt_ring_hdl=%p\n",
 				props, dev_hdl, evt_ring_hdl);
@@ -1615,6 +1617,8 @@ int gsi_alloc_channel(struct gsi_chan_props *props, unsigned long dev_hdl,
 		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
 		return -GSI_STATUS_NODEV;
 	}
+	ee = gsi_ctx->per.ee;
+
 	ee = gsi_ctx->per.ee;
 
 	if (!props || !chan_hdl || dev_hdl != (uintptr_t)gsi_ctx) {
@@ -2218,6 +2222,8 @@ int gsi_query_channel_info(unsigned long chan_hdl,
 	}
 	ee = gsi_ctx->per.ee;
 
+	ee = gsi_ctx->per.ee;
+
 	if (chan_hdl >= gsi_ctx->max_ch || !info) {
 		GSIERR("bad params chan_hdl=%lu info=%p\n", chan_hdl, info);
 		return -GSI_STATUS_INVALID_PARAMS;
@@ -2287,6 +2293,8 @@ int gsi_is_channel_empty(unsigned long chan_hdl, bool *is_empty)
 		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
 		return -GSI_STATUS_NODEV;
 	}
+	ee = gsi_ctx->per.ee;
+
 	ee = gsi_ctx->per.ee;
 
 	if (chan_hdl >= gsi_ctx->max_ch || !is_empty) {
@@ -2475,6 +2483,8 @@ int gsi_poll_channel(unsigned long chan_hdl,
 		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
 		return -GSI_STATUS_NODEV;
 	}
+	ee = gsi_ctx->per.ee;
+
 	ee = gsi_ctx->per.ee;
 
 	if (chan_hdl >= gsi_ctx->max_ch || !notify) {

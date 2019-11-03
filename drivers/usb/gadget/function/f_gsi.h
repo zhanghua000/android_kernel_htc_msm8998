@@ -101,6 +101,20 @@ enum gsi_ctrl_notify_state {
 	GSI_CTRL_NOTIFY_RESPONSE_AVAILABLE,
 };
 
+enum rndis_class_id {
+	RNDIS_ID_UNKNOWN,
+	WIRELESS_CONTROLLER_REMOTE_NDIS,
+	MISC_ACTIVE_SYNC,
+	MISC_RNDIS_OVER_ETHERNET,
+	MISC_RNDIS_OVER_WIFI,
+	MISC_RNDIS_OVER_WIMAX,
+	MISC_RNDIS_OVER_WWAN,
+	MISC_RNDIS_FOR_IPV4,
+	MISC_RNDIS_FOR_IPV6,
+	MISC_RNDIS_FOR_GPRS,
+	RNDIS_ID_MAX,
+};
+
 #define MAXQUEUELEN 128
 struct event_queue {
 	u8 event[MAXQUEUELEN];
@@ -238,6 +252,7 @@ struct f_gsi {
 	atomic_t connected;
 	bool data_interface_up;
 	bool rndis_use_wceis;
+	enum rndis_class_id rndis_id;
 
 	const struct usb_endpoint_descriptor *in_ep_desc_backup;
 	const struct usb_endpoint_descriptor *out_ep_desc_backup;

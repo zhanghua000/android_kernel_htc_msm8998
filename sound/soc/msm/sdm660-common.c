@@ -13,7 +13,9 @@
 #include <linux/input.h>
 #include <linux/of_gpio.h>
 #include <linux/mfd/msm-cdc-pinctrl.h>
+#include <linux/qdsp6v2/apr.h> //HTC_AUD
 #include <sound/pcm_params.h>
+#include <sound/q6core.h> //HTC_AUD
 #include <sound/q6afe-v2.h>
 #include "qdsp6v2/msm-pcm-routing-v2.h"
 #include "sdm660-common.h"
@@ -133,6 +135,7 @@ static struct dev_config tdm_tx_cfg[TDM_INTERFACE_MAX][TDM_PORT_MAX] = {
 static struct dev_config ext_disp_rx_cfg[] = {
 	[DP_RX_IDX] =   {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
 };
+
 static struct dev_config usb_rx_cfg = {
 	.sample_rate = SAMPLING_RATE_48KHZ,
 	.bit_format = SNDRV_PCM_FORMAT_S16_LE,
@@ -199,10 +202,19 @@ static struct wcd_mbhc_config mbhc_cfg = {
 	.mono_stero_detection = false,
 	.swap_gnd_mic = NULL,
 	.hs_ext_micbias = true,
+//HTC_AUD_START - apply htc setting
+#if 0
 	.key_code[0] = KEY_MEDIA,
 	.key_code[1] = KEY_VOICECOMMAND,
 	.key_code[2] = KEY_VOLUMEUP,
 	.key_code[3] = KEY_VOLUMEDOWN,
+#else
+	.key_code[0] = KEY_MEDIA,
+	.key_code[1] = KEY_VOLUMEUP,
+	.key_code[2] = KEY_VOLUMEDOWN,
+	.key_code[3] = 0,
+#endif
+//HTC_AUD_END
 	.key_code[4] = 0,
 	.key_code[5] = 0,
 	.key_code[6] = 0,
@@ -224,14 +236,14 @@ static struct dev_config proxy_rx_cfg = {
 static struct dev_config mi2s_rx_cfg[] = {
 	[PRIM_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
 	[SEC_MI2S]  = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
-	[TERT_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
+	[TERT_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S24_LE, 2}, /* HTC_AUDIO */
 	[QUAT_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
 };
 
 static struct dev_config mi2s_tx_cfg[] = {
 	[PRIM_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
 	[SEC_MI2S]  = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
-	[TERT_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
+	[TERT_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S24_LE, 1}, /* HTC_AUDIO */
 	[QUAT_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
 };
 
@@ -400,6 +412,14 @@ static struct afe_clk_set mi2s_mclk[MI2S_MAX] = {
 };
 
 static struct mi2s_conf mi2s_intf_conf[MI2S_MAX];
+
+//HTC_AUD_START
+#define CARD_TIMEOUT 30000 //30 sec
+static struct delayed_work card_det_work;
+static void htc_card_det(struct work_struct *work);
+static DECLARE_DELAYED_WORK(card_det_work, htc_card_det);
+static int card_reg = -1;
+//HTC_AUD_END
 
 static int proxy_rx_ch_get(struct snd_kcontrol *kcontrol,
 			       struct snd_ctl_elem_value *ucontrol)
@@ -2449,6 +2469,36 @@ done:
 	return ret;
 }
 
+//HTC_AUD_START
+static int msm_mi2s_set_mclk(struct snd_pcm_substream *substream, bool enable)
+{
+	int ret = 0;
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	int port_id = 0;
+	int index = cpu_dai->id;
+
+	port_id = msm_get_port_id(rtd->dai_link->be_id);
+	if (IS_ERR_VALUE(port_id)) {
+		dev_err(rtd->card->dev, "%s: Invalid port_id\n", __func__);
+		ret = port_id;
+		goto done;
+	}
+	mi2s_mclk[index].enable = enable;
+	ret = afe_set_lpass_clock_v2(port_id,
+				     &mi2s_mclk[index]);
+	if (ret < 0) {
+		dev_err(rtd->card->dev,
+			"%s: afe lpass clock failed for port 0x%x , err:%d\n",
+			__func__, port_id, ret);
+		goto done;
+	}
+
+done:
+	return ret;
+}
+//HTC_AUD_END
+
 /**
  * msm_mi2s_snd_startup - startup ops of mi2s.
  *
@@ -2464,6 +2514,10 @@ int msm_mi2s_snd_startup(struct snd_pcm_substream *substream)
 	int port_id = msm_get_port_id(rtd->dai_link->be_id);
 	int index = cpu_dai->id;
 	unsigned int fmt = SND_SOC_DAIFMT_CBS_CFS;
+//HTC_AUD_START: QCOM PATCH
+	struct msm_asoc_mach_data *pdata =
+				snd_soc_card_get_drvdata(rtd->card);
+//HTC_AUD_END: QCOM PATCH
 
 	dev_dbg(rtd->card->dev,
 		"%s: substream = %s  stream = %d, dai name %s, dai ID %d\n",
@@ -2484,6 +2538,15 @@ int msm_mi2s_snd_startup(struct snd_pcm_substream *substream)
 	 */
 	mutex_lock(&mi2s_intf_conf[index].lock);
 	if (++mi2s_intf_conf[index].ref_cnt == 1) {
+//HTC_AUD_START
+		ret = msm_mi2s_set_mclk(substream, true);
+		if (IS_ERR_VALUE(ret)) {
+			dev_err(rtd->card->dev,
+			"%s: afe lpass clock failed to enable MI2S MCLK clock, err:%d\n",
+			__func__, ret);
+			goto clean_up;
+		}
+//HTC_AUD_END
 		/* Check if msm needs to provide the clock to the interface */
 		if (!mi2s_intf_conf[index].msm_is_mi2s_master) {
 			mi2s_clk[index].clk_id = mi2s_ebit_clk[index];
@@ -2515,12 +2578,25 @@ int msm_mi2s_snd_startup(struct snd_pcm_substream *substream)
 				goto clk_off;
 			}
 		}
+//HTC_AUD_START: QCOM PATCH
+		if (index == TERT_MI2S)
+			msm_cdc_pinctrl_select_active_state(pdata->tert_mi2s_gpio_p);
+//HTC_AUD_END: QCOM PATCH
 	}
 	mutex_unlock(&mi2s_intf_conf[index].lock);
 	return 0;
 clk_off:
+//HTC_AUD_START
+#if 1
+	if (IS_ERR_VALUE(ret)) {
+		msm_mi2s_set_mclk(substream, false);
+		msm_mi2s_set_sclk(substream, false);
+	}
+#else
 	if (IS_ERR_VALUE(ret))
 		msm_mi2s_set_sclk(substream, false);
+#endif
+//HTC_AUD_END
 clean_up:
 	if (IS_ERR_VALUE(ret))
 		mi2s_intf_conf[index].ref_cnt--;
@@ -2541,6 +2617,10 @@ void msm_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	int port_id = msm_get_port_id(rtd->dai_link->be_id);
 	int index = rtd->cpu_dai->id;
+//HTC_AUD_START: QCOM PATCH
+	struct msm_asoc_mach_data *pdata =
+				snd_soc_card_get_drvdata(rtd->card);
+//HTC_AUD_END: QCOM PATCH
 
 	pr_debug("%s(): substream = %s  stream = %d\n", __func__,
 		 substream->name, substream->stream);
@@ -2551,10 +2631,20 @@ void msm_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 
 	mutex_lock(&mi2s_intf_conf[index].lock);
 	if (--mi2s_intf_conf[index].ref_cnt == 0) {
+//HTC_AUD_START
+		ret = msm_mi2s_set_mclk(substream, false);
+//HTC_AUD_END
+//HTC_AUD_START: QCOM PATCH
+		if (index == TERT_MI2S)
+			msm_cdc_pinctrl_select_sleep_state(pdata->tert_mi2s_gpio_p);
+//HTC_AUD_END: QCOM PATCH
 		ret = msm_mi2s_set_sclk(substream, false);
 		if (ret < 0)
 			pr_err("%s:clock disable failed for MI2S (%d); ret=%d\n",
 				__func__, index, ret);
+		if (q6core_is_adsp_ready()) //HTC_AUD
+			mi2s_intf_conf[index].ref_cnt++;
+		}
 		if (mi2s_intf_conf[index].msm_is_ext_mclk) {
 			mi2s_mclk[index].enable = 0;
 			pr_debug("%s: Disabling mclk, clk_freq_in_hz = %u\n",
@@ -3025,6 +3115,16 @@ static const struct of_device_id sdm660_asoc_machine_of_match[]  = {
 	{},
 };
 
+//HTC_AUD_START
+static void htc_card_det(struct work_struct *work)
+{
+	pr_err("%s: Trigger BUG due to sound card not register in %d ms \n", __func__, CARD_TIMEOUT);
+#ifdef CONFIG_HTC_DEBUG_DSP
+	BUG();
+#endif
+}
+//HTC_AUD_END
+
 static int msm_asoc_machine_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = NULL;
@@ -3032,6 +3132,14 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	const char *mclk = "qcom,msm-mclk-freq";
 	int ret = -EINVAL, id;
 	const struct of_device_id *match;
+
+//HTC_AUD_START
+	if((apr_get_q6_state() == APR_SUBSYS_LOADED) && card_reg == -1) {
+		pr_info("%s: schedule_delayed_work with card_det_work\n", __func__);
+		schedule_delayed_work(&card_det_work, msecs_to_jiffies(CARD_TIMEOUT));
+		card_reg = 0;
+	}
+//HTC_AUD_END
 
 	pdata = devm_kzalloc(&pdev->dev,
 			     sizeof(struct msm_asoc_mach_data),
@@ -3073,7 +3181,12 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	}
 	if (!card)
 		goto err;
-
+//HTC_AUD_START: QCOM PATCH
+	if (pdata->snd_card_val == EXT_SND_CARD_TASHA) {
+		pdata->tert_mi2s_gpio_p = of_parse_phandle(pdev->dev.of_node,
+					"qcom,tert-mi2s-gpios", 0);
+	}
+//HTC_AUD_END: QCOM PATCH
 	if (pdata->snd_card_val == INT_SND_CARD) {
 		/*reading the gpio configurations from dtsi file*/
 		pdata->pdm_gpio_p = of_parse_phandle(pdev->dev.of_node,
@@ -3084,6 +3197,10 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 					"qcom,cdc-dmic-gpios", 0);
 		pdata->ext_spk_gpio_p = of_parse_phandle(pdev->dev.of_node,
 					"qcom,cdc-ext-spk-gpios", 0);
+//HTC_AUD_START: QCOM PATCH
+		pdata->tert_mi2s_gpio_p = of_parse_phandle(pdev->dev.of_node,
+					"qcom,tert-mi2s-gpios", 0);
+//HTC_AUD_END: QCOM PATCH
 	}
 
 	/*
@@ -3144,6 +3261,12 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 			ret);
 		goto err;
 	}
+
+//HTC_AUD_START
+	pr_info("%s:  cancel_delayed_work with card_det_work\n", __func__);
+	cancel_delayed_work_sync(&card_det_work);
+//HTC_AUD_END
+
 	if (pdata->snd_card_val != INT_SND_CARD)
 		msm_ext_register_audio_notifier(pdev);
 

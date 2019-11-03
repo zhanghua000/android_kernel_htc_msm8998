@@ -528,6 +528,20 @@ slhc_uncompress(struct slcompress *comp, unsigned char *icp, int isize)
 	thp = &cs->cs_tcp;
 	ip = &cs->cs_ip;
 
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+	if(ip->ihl < 20 / 4)
+	{
+		printk(KERN_ERR "[NET][SSD_NETWORK] %s: The IP header length field is too small (icp=%p, ip->ihl=%d, comp->recv_current=%d, comp=%p)\n",
+							__func__,
+							icp,
+							ip->ihl,
+							comp->recv_current,
+							comp
+							);
+		goto bad;
+	}
+#endif
+
 	thp->check = *(__sum16 *)cp;
 	cp += 2;
 

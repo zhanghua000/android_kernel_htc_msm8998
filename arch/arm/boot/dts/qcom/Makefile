@@ -291,6 +291,34 @@ dtb-$(CONFIG_ARCH_SDM630) += sdm630-rumi.dtb \
 	sdm630-pm660a-headset-jacktype-no-cdp.dtb \
 	sdm630-pm660a-headset-jacktype-no-rcm.dtb
 
+ifneq ($(CONFIG_ENABLE_VENDOR_IMAGE),y)
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocl-xa.dtb
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocl-a.dtb
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocluhljapan-xd.dtb
+else
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocl-vendor-xa.dtb
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocl-vendor-a.dtb
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocluhlA1-vendor-xa.dtb
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocluhlA1-vendor-a.dtb
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocljapanStockUI-xa.dtb
+	dtb-$(CONFIG_ARCH_SDM630) += sdm630-htc_ocluhljapanStockUI-xd.dtb
+endif
+
+# HTC msm8998 device dtbs
+dtb-$(CONFIG_ARCH_MSM8998) += \
+	msm8998-v2.1-htc_ocn-xa.dtb \
+	msm8998-v2.1-htc_ocn-xb.dtb \
+	msm8998-v2.1-htc_ocn-xc.dtb \
+	msm8998-v2.1-htc_ocn-xd.dtb \
+	msm8998-v2.1-htc_ocn-xe.dtb \
+	msm8998-v2.1-htc_ocn-xf.dtb \
+	msm8998-v2.1-htc_ocn-a.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-xb.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-xc.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-xd.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-xe.dtb \
+	msm8998-v2.1-htc_ocnuhljapan-a.dtb
+
 ifeq ($(CONFIG_ARM64),y)
 always          := $(dtb-y)
 always          += $(dtbo-y)

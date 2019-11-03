@@ -1334,6 +1334,23 @@ static struct snd_soc_dai_link msm_ext_common_fe_dai[] = {
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA6,
 	},
+/* HTC_AUD_START */
+	{/* hw:x,37 */
+		.name = "Tertiary MI2S_RX Hostless Playback",
+		.stream_name = "Tertiary MI2S_RX Hostless Playback",
+		.cpu_dai_name = "TERT_MI2S_RX_HOSTLESS",
+		.platform_name  = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+/* HTC_AUD_END */
 };
 
 static struct snd_soc_dai_link msm_ext_common_be_dai[] = {
@@ -1626,8 +1643,15 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.stream_name = "Tertiary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.2",
 		.platform_name = "msm-pcm-routing",
+/* HTC_AUD_START - TI porting */
+#ifdef CONFIG_TAS2557_CODEC
+		.codec_name     = "tas2557.8-004c",
+		.codec_dai_name = "tas2557 ASI1",
+#else
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
+#endif
+/* HTC_AUD_END */
 		.no_pcm = 1,
 		.dpcm_playback = 1,
 		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
@@ -1970,7 +1994,8 @@ struct snd_soc_card *populate_snd_card_dailinks(struct device *dev,
 				   sizeof(msm_wcn_be_dai_links));
 			len4 += ARRAY_SIZE(msm_wcn_be_dai_links);
 		}
-		if (of_property_read_bool(dev->of_node,
+//HTC_AUD_START Todo: remove disp audio support temp due to probe failed
+		/*if (of_property_read_bool(dev->of_node,
 					  "qcom,ext-disp-audio-rx")) {
 			dev_dbg(dev, "%s(): ext disp audio support present\n",
 					__func__);
@@ -1978,7 +2003,8 @@ struct snd_soc_card *populate_snd_card_dailinks(struct device *dev,
 				ext_disp_be_dai_link,
 				sizeof(ext_disp_be_dai_link));
 			len4 += ARRAY_SIZE(ext_disp_be_dai_link);
-		}
+		}*/
+//HTC_AUD_END
 		msm_ext_dai_links = msm_ext_tasha_dai_links;
 	} else if (strnstr(card->name, "tavil", strlen(card->name))) {
 		len1 = ARRAY_SIZE(msm_ext_common_fe_dai);
@@ -2015,7 +2041,8 @@ struct snd_soc_card *populate_snd_card_dailinks(struct device *dev,
 				   sizeof(msm_wcn_be_dai_links));
 			len4 += ARRAY_SIZE(msm_wcn_be_dai_links);
 		}
-		if (of_property_read_bool(dev->of_node,
+//HTC_AUD_START Todo: remove disp audio support temp due to probe failed
+		/*if (of_property_read_bool(dev->of_node,
 					  "qcom,ext-disp-audio-rx")) {
 			dev_dbg(dev, "%s(): ext disp audio support present\n",
 					__func__);
@@ -2023,7 +2050,8 @@ struct snd_soc_card *populate_snd_card_dailinks(struct device *dev,
 				ext_disp_be_dai_link,
 				sizeof(ext_disp_be_dai_link));
 			len4 += ARRAY_SIZE(ext_disp_be_dai_link);
-		}
+		}*/
+//HTC_AUD_END
 		msm_ext_dai_links = msm_ext_tavil_dai_links;
 	} else {
 		dev_err(dev, "%s: failing as no matching card name\n",

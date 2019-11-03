@@ -99,6 +99,7 @@ struct msm_asoc_mach_data {
 	struct device_node *pdm_gpio_p; /* used by pinctrl API */
 	struct device_node *comp_gpio_p; /* used by pinctrl API */
 	struct device_node *dmic_gpio_p; /* used by pinctrl API */
+	struct device_node *tert_mi2s_gpio_p; /* used by pinctrl API */ //HTC_AUD: QCOM PATCH
 	struct device_node *ext_spk_gpio_p; /* used by pinctrl API */
 	struct snd_soc_codec *codec;
 	struct sdm660_codec sdm660_codec_fn;
@@ -125,4 +126,9 @@ void msm_aux_pcm_snd_shutdown(struct snd_pcm_substream *substream);
 int msm_mi2s_snd_startup(struct snd_pcm_substream *substream);
 void msm_mi2s_snd_shutdown(struct snd_pcm_substream *substream);
 int msm_common_snd_controls_size(void);
+int msm_headset_lr_event(struct snd_soc_dapm_widget *w,
+				 struct snd_kcontrol *k, int event);
+/* HTC_AUD_START - HPKB29557 ANC feature */
+void htc_set_ext_micbias(bool enable, short mask);
+/* HTC_AUD_END - HPKB29557 ANC feature */
 #endif

@@ -1442,7 +1442,13 @@ static int msm_sdw_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	 * Send speaker configuration only for WSA8810.
 	 * Default configuration is for WSA8815.
 	 */
+/* HTC_AUDIO_START */
+#if 0
 	if (rtd_aux && rtd_aux->component)
+#else
+	if (rtd->card->num_aux_devs && rtd_aux && rtd_aux->component)
+#endif
+/* HTC_AUDIO_END */
 		if (!strcmp(rtd_aux->component->name, WSA8810_NAME_1) ||
 		    !strcmp(rtd_aux->component->name, WSA8810_NAME_2)) {
 			msm_sdw_set_spkr_mode(rtd->codec, SPKR_MODE_1);

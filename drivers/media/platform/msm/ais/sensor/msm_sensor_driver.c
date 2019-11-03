@@ -1060,6 +1060,8 @@ CSID_TG:
 		goto free_camera_info;
 	}
 
+	pr_err("%s probe succeeded", slave_info->sensor_name);
+
 	/*
 	 * Update the subdevice id of flash-src based on availability in kernel.
 	 */
@@ -1097,6 +1099,7 @@ CSID_TG:
 	s_ctrl->sensordata->cam_slave_info = slave_info;
 
 	msm_sensor_fill_sensor_info(s_ctrl, probed_info, entity_name);
+
 
 	if (slave_info->gpio_intr_config.gpio_num != -1) {
 		/* Configure INTB interrupt */

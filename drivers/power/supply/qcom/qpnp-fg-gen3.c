@@ -22,6 +22,11 @@
 #include <linux/qpnp/qpnp-revid.h>
 #include "fg-core.h"
 #include "fg-reg.h"
+#ifdef CONFIG_HTC_BATT
+#include <linux/power/htc_battery.h>
+//#include <linux/htc_flags.h>
+#endif
+
 
 #define FG_GEN3_DEV_NAME	"qcom,fg-gen3"
 
@@ -407,6 +412,9 @@ module_param_named(
 
 static int fg_restart;
 static bool fg_sram_dump;
+#ifdef CONFIG_HTC_BATT
+static bool fg_fake_batt_temp = false;
+#endif // CONFIG_HTC_BATT
 
 /* All getters HERE */
 
@@ -652,6 +660,27 @@ static int fg_get_battery_temp(struct fg_chip *chip, int *val)
 
 	/* Value is in Kelvin; Convert it to deciDegC */
 	temp = (temp - 273) * 10;
+#ifdef CONFIG_HTC_BATT
+	{
+		u16 adc;
+		rc = fg_read(chip, ADC_RR_BATT_THERM_LSB(chip), buf, 2);
+		if (rc < 0) {
+			pr_err("failed to read addr=0x%04x, rc=%d\n",
+				ADC_RR_BATT_THERM_LSB(chip), rc);
+			return rc;
+		}
+
+		adc = ((u16)(buf[1] & BATT_TEMP_MSB_MASK) << 8) |
+			(buf[0] & BATT_TEMP_LSB_MASK);
+
+		if (fg_fake_batt_temp &&
+		    (temp > 600) && (adc < 0x85)) {
+			pr_err("[BattTemp] MSB: %x, LSB: %x, %x, fg_batt_temp: %d!\n",
+				buf[1], buf[0], adc, temp);
+			temp = 690;
+		}
+	}
+#endif // CONFIG_HTC_BATT
 	*val = temp;
 	return 0;
 }
@@ -3082,6 +3111,11 @@ done:
 	fg_notify_charger(chip);
 	chip->profile_loaded = true;
 	fg_dbg(chip, FG_STATUS, "profile loaded successfully");
+
+#ifdef CONFIG_HTC_BATT
+	htc_battery_probe_process(GAUGE_PROBE_DONE);
+#endif //CONFIG_HTC_BATT
+
 out:
 	chip->soc_reporting_ready = true;
 	vote(chip->awake_votable, PROFILE_LOAD, false, 0);
@@ -4287,6 +4321,22 @@ static int fg_hw_init(struct fg_chip *chip)
 		return rc;
 	}
 
+#ifdef CONFIG_HTC_BATT
+	// Modify Thermal coefficient by case-02744488
+	rc = fg_masked_write(chip, BATT_INFO_THERM_C1(chip),
+			BATT_INFO_THERM_COEFF_MASK, 0xD8);
+	if (rc < 0) {
+		pr_err("Error in writing batt_temp_delta, rc=%d\n", rc);
+		return rc;
+	}
+#endif //CONFIG_HTC_BATT
+
+	rc = fg_rconn_config(chip);
+	if (rc < 0) {
+		pr_err("Error in configuring Rconn, rc=%d\n", rc);
+		return rc;
+	}
+
 	fg_encode(chip->sp, FG_SRAM_ESR_TIGHT_FILTER,
 		chip->dt.esr_tight_flt_upct, buf);
 	rc = fg_sram_write(chip, chip->sp[FG_SRAM_ESR_TIGHT_FILTER].addr_word,
@@ -5235,6 +5285,11 @@ static int fg_parse_dt(struct fg_chip *chip)
 			chip->dt.esr_meas_curr_ma = temp;
 	}
 
+#ifdef CONFIG_HTC_BATT
+	fg_fake_batt_temp = of_property_read_bool(node,
+				"htc,fg-fake-batt-temp");
+#endif // CONFIG_HTC_BATT
+
 	return 0;
 }
 
@@ -5434,6 +5489,13 @@ static int fg_gen3_probe(struct platform_device *pdev)
 
 	device_init_wakeup(chip->dev, true);
 	schedule_delayed_work(&chip->profile_load_work, 0);
+
+#ifdef CONFIG_HTC_BATT
+	if (get_kernel_flag() & KERNEL_FLAG_ENABLE_BMS_CHARGER_LOG)
+		fg_gen3_debug_mask = 0xFF;
+	else
+		fg_gen3_debug_mask = FG_IRQ;
+#endif //CONFIG_HTC_BATT
 
 	pr_debug("FG GEN3 driver probed successfully\n");
 	return 0;

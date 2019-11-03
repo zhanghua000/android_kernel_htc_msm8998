@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -912,7 +912,13 @@ int cal_utils_set_cal(size_t data_size, void *data,
 	}
 
 	if ((data_size > get_user_cal_type_size(
+/* HTC_AUD_START Fix Klockwork */
+#if 0
 		cal_type->info.reg.cal_type)) || (data_size < 0)) {
+#else
+		cal_type->info.reg.cal_type))) {
+#endif
+/* HTC_AUD_END */
 		pr_err("%s: cal_type %d, data_size of %zd is invalid, expecting %zd!\n",
 			__func__, cal_type->info.reg.cal_type, data_size,
 			get_user_cal_type_size(cal_type->info.reg.cal_type));
@@ -961,8 +967,39 @@ int cal_utils_set_cal(size_t data_size, void *data,
 		((uint8_t *)data + sizeof(struct audio_cal_type_basic)),
 		data_size - sizeof(struct audio_cal_type_basic));
 
+	/* reset buffer stale flag */
+	cal_block->cal_stale = false;
+
 err:
 	mutex_unlock(&cal_type->lock);
 done:
 	return ret;
 }
+
+/**
+ * cal_utils_mark_cal_used
+ *
+ * @cal_block: pointer to cal block
+ */
+void cal_utils_mark_cal_used(struct cal_block_data *cal_block)
+{
+	if (cal_block)
+		cal_block->cal_stale = true;
+}
+EXPORT_SYMBOL(cal_utils_mark_cal_used);
+
+/**
+ * cal_utils_is_cal_stale
+ *
+ * @cal_block: pointer to cal block
+ *
+ * Returns true if cal block is stale, false otherwise
+ */
+bool cal_utils_is_cal_stale(struct cal_block_data *cal_block)
+{
+    if ((cal_block) && (cal_block->cal_stale))
+		return true;
+
+    return false;
+}
+EXPORT_SYMBOL(cal_utils_is_cal_stale);

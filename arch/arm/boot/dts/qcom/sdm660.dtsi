@@ -319,16 +319,16 @@
 		#size-cells = <2>;
 		ranges;
 
-		wlan_msa_guard: wlan_msa_guard@85600000 {
+		wlan_msa_guard: wlan_msa_guard@96100000 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x0 0x85600000 0x0 0x100000>;
+			reg = <0x0 0x96100000 0x0 0x100000>;
 		};
 
-		wlan_msa_mem: wlan_msa_mem@85700000 {
+		wlan_msa_mem: wlan_msa_mem@96200000 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x0 0x85700000 0x0 0x100000>;
+			reg = <0x0 0x96200000 0x0 0x100000>;
 		};
 
 		removed_regions: removed_regions@85800000 {
@@ -1615,7 +1615,6 @@
 	qcom,msm_fastrpc {
 		compatible = "qcom,msm-fastrpc-adsp";
 		qcom,fastrpc-glink;
-		qcom,fastrpc-vmid-heap-shared;
 
 		qcom,msm_fastrpc_compute_cb1 {
 			compatible = "qcom,msm-fastrpc-compute-cb";
